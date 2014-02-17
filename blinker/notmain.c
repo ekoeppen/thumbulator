@@ -2,11 +2,16 @@
 //------------------------------------------------------------------------
 //------------------------------------------------------------------------
 void PUT32 ( unsigned int, unsigned int);
+unsigned int GET32 ( unsigned int);
 #define THUL_UART_BASE 0xE0000000
 //------------------------------------------------------------------------
 void uart_putc ( unsigned int c )
 {
     PUT32(THUL_UART_BASE+0x0,c);
+}
+unsigned char uart_getc()
+{
+    return GET32(THUL_UART_BASE+0x0);
 }
 //------------------------------------------------------------------------
 void hexstring ( unsigned int d )
@@ -60,6 +65,7 @@ int notmain ( void )
         prand=prand32(prand);
         hexstring(prand);
     }
+    uart_putc(uart_getc());
 
     return(0);
 }

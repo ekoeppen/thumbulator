@@ -1,11 +1,9 @@
 
 thumbulator : thumbulator.c
-	gcc -o thumbulator -O2 thumbulator.c
+	gcc -g -o thumbulator -O2 thumbulator.c
 
 clean :
 	rm -f thumbulator
-	rm -f output.vcd
 
-
-
-
+install : thumbulator
+	install -D thumbulator /usr/local/bin/thumbulator
