@@ -6,4 +6,5 @@ clean :
 	rm -f thumbulator
 
 install : thumbulator
-	install -D thumbulator /usr/local/bin/thumbulator
+	install -d /usr/local/bin/
+	install -m 0755 thumbulator /usr/local/bin/

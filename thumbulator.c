@@ -50,13 +50,31 @@ unsigned int cpuid;
 char *output_file_name;
 
 const char options[] = "c:o:d:m:";
+const char *condition_str[] = {
+	"eq", "ne", "cs", "cc", "mi", "pl", "vs", "vc", "hi", "ls", "ge", "lt", "gt", "le", "", ""
+};
+
+void dump_registers(void) {
+	int i;
+
+	fprintf(stderr, "Registers:\n");
+	for (i = 0; i < 16; i++) {
+		switch (i) {
+			case 13: fprintf(stderr, "sp:  "); break;
+			case 14: fprintf(stderr, "lr:  "); break;
+			case 15: fprintf(stderr, "pc:  "); break;
+			default: fprintf(stderr, "r%d: %s", i, i < 10 ? " " : ""); break;
+		}
+		fprintf(stderr, "%08x\n", reg_norm[i]);
+	}
+}
 
 unsigned int fetch16(unsigned int addr)
 {
 	unsigned int data;
 
-	if (DBUGFETCH) fprintf(stderr, "fetch16(0x%08X) = ", addr);
-	if (DBUG) fprintf(stderr, "fetch16(0x%08X) = ", addr);
+	if (DBUGFETCH) fprintf(stderr, "fetch16(0x%08x) = ", addr);
+	if (DBUG) fprintf(stderr, "fetch16(0x%08x) = ", addr);
 	switch(addr & 0xFF000000)
 	{
 		case 0x08000000:
@@ -66,24 +84,25 @@ unsigned int fetch16(unsigned int addr)
 
 			//if (addr < 0x50)
 			//{
-			//    fprintf(stderr, "fetch16(0x%08X),  abort\n", addr);
+			//    fprintf(stderr, "fetch16(0x%08x),  abort\n", addr);
 			//    exit(1);
 			//}
 
 			addr >>= 1;
 			data = rom[addr];
-			if (DBUGFETCH) fprintf(stderr, "0x%04X\n", data);
-			if (DBUG) fprintf(stderr, "0x%04X\n", data);
+			if (DBUGFETCH) fprintf(stderr, "0x%04x\n", data);
+			if (DBUG) fprintf(stderr, "0x%04x\n", data);
 			return (data);
 		case RAM_START: //RAM
 			addr &= RAMADDMASK;
 			addr >>= 1;
 			data = ram[addr];
-			if (DBUGFETCH) fprintf(stderr, "0x%04X\n", data);
-			if (DBUG) fprintf(stderr, "0x%04X\n", data);
+			if (DBUGFETCH) fprintf(stderr, "0x%04x\n", data);
+			if (DBUG) fprintf(stderr, "0x%04x\n", data);
 			return (data);
 	}
-	fprintf(stderr, "fetch16(0x%08X),  abort pc  =  0x%04X\n", addr, read_register(15));
+	fprintf(stderr, "fetch16(0x%08x),  abort pc  =  0x%04x\n", addr, read_register(15));
+	dump_registers();
 	exit(1);
 }
 
@@ -91,8 +110,8 @@ unsigned int fetch32(unsigned int addr)
 {
 	unsigned int data;
 
-	if (DBUGFETCH) fprintf(stderr, "fetch32(0x%08X) = ", addr);
-	if (DBUG) fprintf(stderr, "fetch32(0x%08X) = ", addr);
+	if (DBUGFETCH) fprintf(stderr, "fetch32(0x%08x) = ", addr);
+	if (DBUG) fprintf(stderr, "fetch32(0x%08x) = ", addr);
 	switch(addr & 0xFF000000)
 	{
 		case 0x08000000:
@@ -101,53 +120,56 @@ unsigned int fetch32(unsigned int addr)
 			if (addr < 0x50)
 			{
 				data = read32(addr);
-				if (DBUGFETCH) fprintf(stderr, "0x%08X\n", data);
-				if (DBUG) fprintf(stderr, "0x%08X\n", data);
+				if (DBUGFETCH) fprintf(stderr, "0x%08x\n", data);
+				if (DBUG) fprintf(stderr, "0x%08x\n", data);
 				if (addr == 0x00000000) return (data);
 				if (addr == 0x00000004) return (data);
 				if (addr == 0x0000003C) return (data);
-				fprintf(stderr, "fetch32(0x%08X),  abort pc  =  0x%04X\n", addr, read_register(15));
+				fprintf(stderr, "fetch32(0x%08x),  abort pc  =  0x%04x\n", addr, read_register(15));
+				dump_registers();
 				exit(1);
 			}
 		case RAM_START: //RAM
 			//data = fetch16(addr+0);
 			//data |= ((unsigned int)fetch16(addr+2)) << 16;
 			data = read32(addr);
-			if (DBUGFETCH) fprintf(stderr, "0x%08X\n", data);
-			if (DBUG) fprintf(stderr, "0x%08X\n", data);
+			if (DBUGFETCH) fprintf(stderr, "0x%08x\n", data);
+			if (DBUG) fprintf(stderr, "0x%08x\n", data);
 			return (data);
 	}
-	fprintf(stderr, "fetch32(0x%08X),  abort pc 0x%04X\n", addr, read_register(15));
+	fprintf(stderr, "fetch32(0x%08x),  abort pc 0x%04x\n", addr, read_register(15));
+	dump_registers();
 	exit(1);
 }
 
 void write16(unsigned int addr,  unsigned int data)
 {
-	if (DBUG) fprintf(stderr, "write16(0x%08X, 0x%04X)\n", addr, data);
+	if (DBUG) fprintf(stderr, "write16(0x%08x, 0x%04x)\n", addr, data);
 	switch(addr & 0xFF000000)
 	{
 		case 0x08000000:
 			addr &= ~(0x08000000);
 		case 0x00000000: //ROM
-			if (DBUGRAM) fprintf(stderr, "write16(0x%08X, 0x%04X)\n", addr, data);
+			if (DBUGRAM) fprintf(stderr, "write16(0x%08x, 0x%04x)\n", addr, data);
 			addr &= ROMADDMASK;
 			addr >>= 1;
 			rom[addr] = data & 0xFFFF;
 			return;
 		case RAM_START: //RAM
-			if (DBUGRAM) fprintf(stderr, "write16(0x%08X, 0x%04X)\n", addr, data);
+			if (DBUGRAM) fprintf(stderr, "write16(0x%08x, 0x%04x)\n", addr, data);
 			addr &= RAMADDMASK;
 			addr >>= 1;
 			ram[addr] = data & 0xFFFF;
 			return;
 	}
-	fprintf(stderr, "write16(0x%08X, 0x%04X),  abort pc 0x%04X\n", addr, data, read_register(15));
+	fprintf(stderr, "write16(0x%08x, 0x%04x),  abort pc 0x%04x\n", addr, data, read_register(15));
+	dump_registers();
 	exit(1);
 }
 
 void write32(unsigned int addr,  unsigned int data)
 {
-	if (DBUG) fprintf(stderr, "write32(0x%08X, 0x%08X)\n", addr, data);
+	if (DBUG) fprintf(stderr, "write32(0x%08x, 0x%08x)\n", addr, data);
 	switch(addr & 0xFF000000)
 	{
 		case 0xF0000000: //halt
@@ -197,17 +219,17 @@ void write32(unsigned int addr,  unsigned int data)
 			{
 				case 0x00:
 					{
-						fprintf(stderr, "[0x%08X][0x%08X] 0x%08X\n", read_register(14), addr, data);
+						fprintf(stderr, "[0x%08x][0x%08x] 0x%08x\n", read_register(14), addr, data);
 						return;
 					}
 				case 0x10:
 					{
-						printf("0x%08X ", data);
+						printf("0x%08x ", data);
 						return;
 					}
 				case 0x20:
 					{
-						printf("0x%08X\n", data);
+						printf("0x%08x\n", data);
 						return;
 					}
 			}
@@ -215,20 +237,20 @@ void write32(unsigned int addr,  unsigned int data)
 			addr &= ~(0x08000000);
 		case 0x00000000:
 		case RAM_START: //RAM
-			if (DBUGRAMW) fprintf(stderr, "write32(0x%08X, 0x%08X)\n", addr, data);
+			if (DBUGRAMW) fprintf(stderr, "write32(0x%08x, 0x%08x)\n", addr, data);
 			write16(addr+0, (data >>  0) & 0xFFFF);
 			write16(addr+2, (data >> 16) & 0xFFFF);
 			return;
 	}
-	fprintf(stderr, "write32(0x%08X, 0x%08X),  ignored pc 0x%04X\n", addr, data, read_register(15));
-	// exit(1);
+	fprintf(stderr, "write32(0x%08x, 0x%08x),  ignored pc 0x%04x\n", addr, data, read_register(15));
+	exit(1);
 }
 
 unsigned int read16(unsigned int addr)
 {
 	unsigned int data;
 
-	if (DBUG) fprintf(stderr, "read16(0x%08X) = ", addr);
+	if (DBUG) fprintf(stderr, "read16(0x%08x) = ", addr);
 	switch(addr & 0xFF000000)
 	{
 		case 0x08000000:
@@ -237,18 +259,19 @@ unsigned int read16(unsigned int addr)
 			addr &= ROMADDMASK;
 			addr >>= 1;
 			data = rom[addr];
-			if (DBUG) fprintf(stderr, "0x%04X\n", data);
+			if (DBUG) fprintf(stderr, "0x%04x\n", data);
 			return (data);
 		case RAM_START: //RAM
-			if (DBUGRAM) fprintf(stderr, "read16(0x%08X) = ", addr);
+			if (DBUGRAM) fprintf(stderr, "read16(0x%08x) = ", addr);
 			addr &= RAMADDMASK;
 			addr >>= 1;
 			data = ram[addr];
-			if (DBUG) fprintf(stderr, "0x%04X\n", data);
-			if (DBUGRAM) fprintf(stderr, "0x%04X\n", data);
+			if (DBUG) fprintf(stderr, "0x%04x\n", data);
+			if (DBUGRAM) fprintf(stderr, "0x%04x\n", data);
 			return (data);
 	}
-	fprintf(stderr, "read16(0x%08X),  abort pc 0x%04X\n", addr, read_register(15));
+	fprintf(stderr, "read16(0x%08x),  abort pc 0x%04x\n", addr, read_register(15));
+	dump_registers();
 	exit(1);
 }
 
@@ -256,18 +279,18 @@ unsigned int read32(unsigned int addr)
 {
 	unsigned int data;
 
-	if (DBUG) fprintf(stderr, "read32(0x%08X) = ", addr);
+	if (DBUG) fprintf(stderr, "read32(0x%08x) = ", addr);
 	switch(addr & 0xFF000000)
 	{
 		case 0x08000000:
 			addr &= ~(0x08000000);
 		case 0x00000000: //ROM
 		case RAM_START: //RAM
-			if (DBUGRAMW) fprintf(stderr, "read32(0x%08X) = ", addr);
+			if (DBUGRAMW) fprintf(stderr, "read32(0x%08x) = ", addr);
 			data  = read16(addr+0);
 			data |= ((unsigned int)read16(addr+2)) << 16;
-			if (DBUG) fprintf(stderr, "0x%08X\n", data);
-			if (DBUGRAMW) fprintf(stderr, "0x%08X\n", data);
+			if (DBUG) fprintf(stderr, "0x%08x\n", data);
+			if (DBUGRAMW) fprintf(stderr, "0x%08x\n", data);
 			return (data);
 		case PERIPH_START:
 			{
@@ -307,7 +330,8 @@ unsigned int read32(unsigned int addr)
 				}
 			}
 	}
-	fprintf(stderr, "read32(0x%08X),  abort pc 0x%04X\n", addr, read_register(15));
+	fprintf(stderr, "read32(0x%08x),  abort pc 0x%04x\n", addr, read_register(15));
+	dump_registers();
 	exit(1);
 }
 
@@ -365,6 +389,48 @@ void do_vflag_bit(unsigned int x)
 	if (x) cpsr |= CPSR_V;  else cpsr &= ~CPSR_V;
 }
 
+int condition_met(int condition)
+{
+	switch (condition) {
+		case 0x0: //b eq  z set
+			return (cpsr & CPSR_Z);
+		case 0x1: //b ne  z clear
+			return (!(cpsr & CPSR_Z));
+		case 0x2: //b cs c set
+			return (cpsr & CPSR_C);
+		case 0x3: //b cc c clear
+			return (!(cpsr & CPSR_C));
+		case 0x4: //b mi n set
+			return (cpsr & CPSR_N);
+		case 0x5: //b pl n clear
+			return (!(cpsr & CPSR_N));
+		case 0x6: //b vs v set
+			return (cpsr & CPSR_V);
+		case 0x7: //b vc v clear
+			return (!(cpsr & CPSR_V));
+		case 0x8: //b hi c set z clear
+			return ((cpsr & CPSR_C) && (!(cpsr & CPSR_Z)));
+		case 0x9: //b ls c clear or z set
+			return ((cpsr & CPSR_Z) || (!(cpsr & CPSR_C)));
+		case 0xA: //b ge N  ==  V
+			return ((cpsr & CPSR_N) && (cpsr & CPSR_V)) || ((!(cpsr & CPSR_N)) && (!(cpsr & CPSR_V)));
+		case 0xB: //b lt N ! =  V
+			return ((!(cpsr & CPSR_N)) && (cpsr & CPSR_V)) || ((!(cpsr & CPSR_V)) && (cpsr & CPSR_N));
+		case 0xC: //b gt Z == 0 and N  ==  V
+			return !(cpsr & CPSR_Z) &&
+				(((cpsr & CPSR_N) && (cpsr & CPSR_V)) || ((!(cpsr & CPSR_N)) && (!(cpsr & CPSR_V))));
+		case 0xD: //b le Z == 1 or N ! =  V
+			return (cpsr & CPSR_Z) ||
+				((!(cpsr & CPSR_N)) && (cpsr & CPSR_V)) ||
+				((!(cpsr & CPSR_V)) && (cpsr & CPSR_N));
+		case 0xE:
+			return 1;
+		case 0xF:
+			return 0;
+	}
+	return 0;
+}
+
 int handle_bkpt(unsigned int bp, unsigned int arg)
 {
 	int r = 1;
@@ -380,20 +446,20 @@ int handle_bkpt(unsigned int bp, unsigned int arg)
 		case 0x80:
 			s = read32(sp + 8);
 			e = read32(sp + 4);
-			fprintf(stderr, "Dumping from %08X to %08X...\n",
+			fprintf(stderr, "Dumping from %08x to %08x...\n",
 					s, e);
 			f = fopen(output_file_name, "wb");
 			while (s != e) {
 				n = read32(s);
-				fwrite(&n, 4, 1, f);
-				s += 4;
+				fwrite(&n, 2, 1, f);
+				s += 2;
 			}
 			fclose(f);
-			write_register(13, sp + 12);
+			write_register(13, read32(sp + 12));
 			r = 0;
 			break;
 		default:
-			fprintf(stderr, "bkpt 0x%02X %08X\n", bp, arg);
+			fprintf(stderr, "bkpt 0x%02X %08x\n", bp, arg);
 			break;
 	}
 	return r;
@@ -407,13 +473,13 @@ int ldr1_handler(unsigned int pc, unsigned short inst)
 	unsigned int rm, rd, rn, rs;
 	unsigned int op;
 
-	if (DISS) fprintf(stderr, "--- 0x%08X: 0x%04X ", (pc-4), inst);
+	if (DISS) fprintf(stderr, "--- 0x%08x: 0x%04x ", (pc-4), inst);
 
 	rd = (inst >> 0) & 0x07;
 	rn = (inst >> 3) & 0x07;
 	rb = (inst >> 6) & 0x1F;
 	rb <<= 2;
-	if (DISS) fprintf(stderr, "ldr r%u, [r%u, #0x%X]\n", rd, rn, rb);
+	if (DISS) fprintf(stderr, "ldr r%u, [r%u, #0x%x]\n", rd, rn, rb);
 	rb = read_register(rn)+rb;
 	rc = read32(rb);
 	write_register(rd, rc);
@@ -428,13 +494,13 @@ int bx_handler(unsigned int pc, unsigned short inst)
 	unsigned int rm, rd, rn, rs;
 	unsigned int op;
 
-	if (DISS) fprintf(stderr, "--- 0x%08X: 0x%04X ", (pc-4), inst);
+	if (DISS) fprintf(stderr, "--- 0x%08x: 0x%04x ", (pc-4), inst);
 
 	rm = (inst >> 3) & 0xF;
 	if (DISS) fprintf(stderr, "bx r%u\n", rm);
 	rc = read_register(rm);
 	rc += 2;
-	//fprintf(stderr, "bx r%u 0x%X 0x%X\n", rm, rc, pc);
+	// if (DISS) fprintf(stderr, "bx r%u 0x%x 0x%x\n", rm, rc, pc);
 	if (rc & 1)
 	{
 		rc &= ~1;
@@ -443,7 +509,8 @@ int bx_handler(unsigned int pc, unsigned short inst)
 	}
 	else
 	{
-		fprintf(stderr, "cannot branch to arm 0x%08X 0x%04X\n", pc, inst);
+		fprintf(stderr, "cannot branch to ARM code at %08x (pc = 0x%08x, inst = 0x%04x)\n", rc, pc, inst);
+		dump_registers();
 		return (1);
 	}
 	return 0;
@@ -457,6 +524,7 @@ int add2_handler(unsigned int pc, unsigned short inst)
 	unsigned int rm, rd, rn, rs;
 	unsigned int op;
 
+	if (DISS) fprintf(stderr, "--- 0x%08x: 0x%04x ", (pc-4), inst);
 	//ADD(2) big immediate one register
 	rb = (inst >> 0) & 0xFF;
 	rd = (inst >> 8) & 0x7;
@@ -478,6 +546,7 @@ int pop_handler(unsigned int pc, unsigned short inst) {
 	unsigned int rm, rd, rn, rs;
 	unsigned int op;
 
+	if (DISS) fprintf(stderr, "--- 0x%08x: 0x%04x ", (pc-4), inst);
 	if (DISS)
 	{
 		fprintf(stderr, "pop {");
@@ -512,7 +581,7 @@ int pop_handler(unsigned int pc, unsigned short inst) {
 		rc = read32(sp);
 		if ((rc & 1) == 0)
 		{
-			fprintf(stderr, "pop {rc} with an ARM address pc 0x%08X popped 0x%08X\n", pc, rc);
+			fprintf(stderr, "pop {rc} with an ARM address pc 0x%08x popped 0x%08x\n", pc, rc);
 			//exit(1);
 			rc &= ~1;
 		}
@@ -531,6 +600,7 @@ int push_handler(unsigned int pc, unsigned short inst) {
 	unsigned int rm, rd, rn, rs;
 	unsigned int op;
 
+	if (DISS) fprintf(stderr, "--- 0x%08x: 0x%04x ", (pc-4), inst);
 	if (DISS)
 	{
 		fprintf(stderr, "push {");
@@ -552,7 +622,7 @@ int push_handler(unsigned int pc, unsigned short inst) {
 	}
 
 	sp = read_register(13);
-	//fprintf(stderr, "sp 0x%08X\n", sp);
+	//fprintf(stderr, "sp 0x%08x\n", sp);
 	for (ra = 0, rb = 0x01, rc = 0; rb; rb = (rb << 1) & 0xFF, ra++)
 	{
 		if (inst & rb)
@@ -579,7 +649,7 @@ int push_handler(unsigned int pc, unsigned short inst) {
 
 		if ((rc & 1) == 0)
 		{
-			fprintf(stderr, "push {lr} with an ARM address pc 0x%08X popped 0x%08X\n", pc, rc);
+			fprintf(stderr, "push {lr} with an ARM address pc 0x%08x popped 0x%08x\n", pc, rc);
 			//                exit(1);
 		}
 
@@ -589,15 +659,87 @@ int push_handler(unsigned int pc, unsigned short inst) {
 	return (0);
 }
 
-int default_handler(unsigned int pc, unsigned short inst)
+int default_thumb2_handler(unsigned int pc, unsigned short inst)
+{
+	unsigned int sp;
+
+	unsigned int ra, rb, rc;
+	unsigned int rm, rd, rn, rs;
+	unsigned int op, op1, op2, inst2;
+	inst2 = fetch16(pc - 2);
+
+	op1 = (inst & 0x1800) >> 11;
+	op2 = (inst & 0x07f0) >> 4;
+	op = (inst2 & 0xf000) >> 15;
+
+	//fprintf(stderr, "Thumb-2: %01x %07x %01x\n", op1, op2, op);
+	//BL(Thumb-2)
+	switch (op1) {
+		case 2:
+			if (op == 1) {
+				int j1, j2, s, imm_hi, imm_lo, offset;
+				op = (inst2 & 0x3000) >> 12;
+
+				offset = 0;
+				s = (inst & 0x400) >> 10;
+				j1 = (inst2 & 0x2000) >> 13;
+				j2 = (inst2 & 0x800) >> 11;
+				if ((op & 0x5) == 0 && (op2 & 0x38) != 0x38) {
+					int cond = (inst & 0x3c0);
+					if (condition_met(cond >> 6)) {
+						struct {signed int x:20;} ext;
+						imm_hi = (inst & 0x3F);
+						imm_lo = (inst2 & 0x7FF);
+						offset = (s << 20) + (!(j1 ^ s) << 19) + (!(j2 ^ s) << 18) + (imm_hi << 12) | (imm_lo << 1);
+						offset = (ext.x = offset) + 1;
+					}
+					if (DISS) fprintf(stderr, "b%s.w %08x\n", condition_str[cond], pc + offset);
+				} else if ((op & 0x5) == 1) {
+					struct {signed int x:24;} ext;
+					imm_hi = (inst & 0x3FF);
+					imm_lo = (inst2 & 0x7FF);
+					offset = (s << 24) + (!(j1 ^ s) << 23) + (!(j2 ^ s) << 22) + (imm_hi << 12) | (imm_lo << 1);
+					offset = (ext.x = offset) + 1;
+					if (DISS) fprintf(stderr, "bl %08x\n", pc + offset);
+				}
+
+				if (offset) {
+					if ((pc + 2 + offset) & 1) {
+						write_register(14, pc | 1);
+						rc &= ~1;
+						write_register(15, pc + 2 + offset);
+						return (0);
+					} else {
+						fprintf(stderr, "cannot branch to ARM location %08x (pc = 0x%08x, inst = 0x%04x)\n",
+								pc + 2 + offset + 1, pc, inst);
+						return (1);
+					}
+				} else {
+					write_register(15, pc + 2);
+					return 0;
+				}
+			} else {
+				fprintf(stderr, "Thumb-2 instruction 0x%0x %04x at 0x%08x not implemented\n", inst, inst2, pc - 4);
+				return (1);
+			}
+			break;
+		case 1:
+		case 3:
+			fprintf(stderr, "Thumb-2 instruction 0x%0x %04x at 0x%08x not implemented\n", inst, inst2, pc - 4);
+			return (1);
+			break;
+	}
+	fprintf(stderr, "invalid Thumb-2 instruction 0x%08x 0x%04x\n", pc-4, inst);
+	return (1);
+}
+
+int default_thumb_handler(unsigned int pc, unsigned short inst)
 {
 	unsigned int sp;
 
 	unsigned int ra, rb, rc;
 	unsigned int rm, rd, rn, rs;
 	unsigned int op;
-
-	if (DISS) fprintf(stderr, "--- 0x%08X: 0x%04X ", (pc-4), inst);
 
 	//LDR(1) two register immediate
 	if ((inst & 0xF800) == 0x6800) {
@@ -630,6 +772,8 @@ int default_handler(unsigned int pc, unsigned short inst)
 		return push_handler(pc, inst);
 	}
 
+	if (DISS) fprintf(stderr, "--- 0x%08x: 0x%04x ", (pc-4), inst);
+
 	//ADC
 	if ((inst & 0xFFC0) == 0x4140)
 	{
@@ -656,10 +800,10 @@ int default_handler(unsigned int pc, unsigned short inst)
 		rb = (inst >> 6) & 0x7;
 		if (rb)
 		{
-			if (DISS) fprintf(stderr, "adds r%u, r%u, #0x%X\n", rd, rn, rb);
+			if (DISS) fprintf(stderr, "adds r%u, r%u, #0x%x\n", rd, rn, rb);
 			ra = read_register(rn);
 			rc = ra+rb;
-			//fprintf(stderr, "0x%08X  =  0x%08X + 0x%08X\n", rc, ra, rb);
+			//fprintf(stderr, "0x%08x  =  0x%08x + 0x%08x\n", rc, ra, rb);
 			write_register(rd, rc);
 			do_nflag(rc);
 			do_zflag(rc);
@@ -709,13 +853,13 @@ int default_handler(unsigned int pc, unsigned short inst)
 		{
 			if ((rc & 1) == 0)
 			{
-				fprintf(stderr, "add pc, ... produced an arm address 0x%08X 0x%08X\n", pc, rc);
+				fprintf(stderr, "add pc, ... produced an arm address 0x%08x 0x%08x\n", pc, rc);
 				exit(1);
 			}
 			rc &= ~1;  //write_register may do this as well
 			rc += 2;  //The program counter is special
 		}
-		//fprintf(stderr, "0x%08X  =  0x%08X + 0x%08X\n", rc, ra, rb);
+		//fprintf(stderr, "0x%08x  =  0x%08x + 0x%08x\n", rc, ra, rb);
 		write_register(rd, rc);
 		return (0);
 	}
@@ -779,7 +923,7 @@ int default_handler(unsigned int pc, unsigned short inst)
 		rd = (inst >> 0) & 0x07;
 		rm = (inst >> 3) & 0x07;
 		rb = (inst >> 6) & 0x1F;
-		if (DISS) fprintf(stderr, "asrs r%u, r%u, #0x%X\n", rd, rm, rb);
+		if (DISS) fprintf(stderr, "asrs r%u, r%u, #0x%x\n", rd, rm, rb);
 		rc = read_register(rm);
 		if (rb == 0)
 		{
@@ -863,7 +1007,7 @@ int default_handler(unsigned int pc, unsigned short inst)
 		switch(op)
 		{
 		case 0x0: //b eq  z set
-			if (DISS) fprintf(stderr, "beq 0x%08X\n", rb-3);
+			if (DISS) fprintf(stderr, "beq 0x%08x\n", rb-3);
 			if (cpsr & CPSR_Z)
 			{
 				write_register(15, rb);
@@ -871,7 +1015,7 @@ int default_handler(unsigned int pc, unsigned short inst)
 			return (0);
 
 		case 0x1: //b ne  z clear
-			if (DISS) fprintf(stderr, "bne 0x%08X\n", rb-3);
+			if (DISS) fprintf(stderr, "bne 0x%08x\n", rb-3);
 			if (!(cpsr & CPSR_Z))
 			{
 				write_register(15, rb);
@@ -879,7 +1023,7 @@ int default_handler(unsigned int pc, unsigned short inst)
 			return (0);
 
 		case 0x2: //b cs c set
-			if (DISS) fprintf(stderr, "bcs 0x%08X\n", rb-3);
+			if (DISS) fprintf(stderr, "bcs 0x%08x\n", rb-3);
 			if (cpsr & CPSR_C)
 			{
 				write_register(15, rb);
@@ -887,7 +1031,7 @@ int default_handler(unsigned int pc, unsigned short inst)
 			return (0);
 
 		case 0x3: //b cc c clear
-			if (DISS) fprintf(stderr, "bcc 0x%08X\n", rb-3);
+			if (DISS) fprintf(stderr, "bcc 0x%08x\n", rb-3);
 			if (!(cpsr & CPSR_C))
 			{
 				write_register(15, rb);
@@ -895,7 +1039,7 @@ int default_handler(unsigned int pc, unsigned short inst)
 			return (0);
 
 		case 0x4: //b mi n set
-			if (DISS) fprintf(stderr, "bmi 0x%08X\n", rb-3);
+			if (DISS) fprintf(stderr, "bmi 0x%08x\n", rb-3);
 			if (cpsr & CPSR_N)
 			{
 				write_register(15, rb);
@@ -903,7 +1047,7 @@ int default_handler(unsigned int pc, unsigned short inst)
 			return (0);
 
 		case 0x5: //b pl n clear
-			if (DISS) fprintf(stderr, "bpl 0x%08X\n", rb-3);
+			if (DISS) fprintf(stderr, "bpl 0x%08x\n", rb-3);
 			if (!(cpsr & CPSR_N))
 			{
 				write_register(15, rb);
@@ -912,7 +1056,7 @@ int default_handler(unsigned int pc, unsigned short inst)
 
 
 		case 0x6: //b vs v set
-			if (DISS) fprintf(stderr, "bvs 0x%08X\n", rb-3);
+			if (DISS) fprintf(stderr, "bvs 0x%08x\n", rb-3);
 			if (cpsr & CPSR_V)
 			{
 				write_register(15, rb);
@@ -920,7 +1064,7 @@ int default_handler(unsigned int pc, unsigned short inst)
 			return (0);
 
 		case 0x7: //b vc v clear
-			if (DISS) fprintf(stderr, "bvc 0x%08X\n", rb-3);
+			if (DISS) fprintf(stderr, "bvc 0x%08x\n", rb-3);
 			if (!(cpsr & CPSR_V))
 			{
 				write_register(15, rb);
@@ -929,7 +1073,7 @@ int default_handler(unsigned int pc, unsigned short inst)
 
 
 		case 0x8: //b hi c set z clear
-			if (DISS) fprintf(stderr, "bhi 0x%08X\n", rb-3);
+			if (DISS) fprintf(stderr, "bhi 0x%08x\n", rb-3);
 			if ((cpsr & CPSR_C) && (!(cpsr & CPSR_Z)))
 			{
 				write_register(15, rb);
@@ -937,7 +1081,7 @@ int default_handler(unsigned int pc, unsigned short inst)
 			return (0);
 
 		case 0x9: //b ls c clear or z set
-			if (DISS) fprintf(stderr, "bls 0x%08X\n", rb-3);
+			if (DISS) fprintf(stderr, "bls 0x%08x\n", rb-3);
 			if ((cpsr & CPSR_Z) || (!(cpsr & CPSR_C)))
 			{
 				write_register(15, rb);
@@ -945,7 +1089,7 @@ int default_handler(unsigned int pc, unsigned short inst)
 			return (0);
 
 		case 0xA: //b ge N  ==  V
-			if (DISS) fprintf(stderr, "bge 0x%08X\n", rb-3);
+			if (DISS) fprintf(stderr, "bge 0x%08x\n", rb-3);
 			ra = 0;
 			if ((cpsr & CPSR_N) && (cpsr & CPSR_V)) ra++;
 			if ((!(cpsr & CPSR_N)) && (!(cpsr & CPSR_V))) ra++;
@@ -956,7 +1100,7 @@ int default_handler(unsigned int pc, unsigned short inst)
 			return (0);
 
 		case 0xB: //b lt N ! =  V
-			if (DISS) fprintf(stderr, "blt 0x%08X\n", rb-3);
+			if (DISS) fprintf(stderr, "blt 0x%08x\n", rb-3);
 			ra = 0;
 			if ((!(cpsr & CPSR_N)) && (cpsr & CPSR_V)) ra++;
 			if ((!(cpsr & CPSR_V)) && (cpsr & CPSR_N)) ra++;
@@ -967,7 +1111,7 @@ int default_handler(unsigned int pc, unsigned short inst)
 			return (0);
 
 		case 0xC: //b gt Z == 0 and N  ==  V
-			if (DISS) fprintf(stderr, "bgt 0x%08X\n", rb-3);
+			if (DISS) fprintf(stderr, "bgt 0x%08x\n", rb-3);
 			ra = 0;
 			if ((cpsr & CPSR_N) && (cpsr & CPSR_V)) ra++;
 			if ((!(cpsr & CPSR_N)) && (!(cpsr & CPSR_V))) ra++;
@@ -979,7 +1123,7 @@ int default_handler(unsigned int pc, unsigned short inst)
 			return (0);
 
 		case 0xD: //b le Z == 1 or N ! =  V
-			if (DISS) fprintf(stderr, "ble 0x%08X\n", rb-3);
+			if (DISS) fprintf(stderr, "ble 0x%08x\n", rb-3);
 			ra = 0;
 			if ((!(cpsr & CPSR_N)) && (cpsr & CPSR_V)) ra++;
 			if ((!(cpsr & CPSR_V)) && (cpsr & CPSR_N)) ra++;
@@ -1007,7 +1151,7 @@ int default_handler(unsigned int pc, unsigned short inst)
 		rb <<= 1;
 		rb += pc;
 		rb += 2;
-		if (DISS) fprintf(stderr, "B 0x%08X\n", rb-3);
+		if (DISS) fprintf(stderr, "b 0x%08x\n", rb-3);
 		write_register(15, rb);
 		return (0);
 	}
@@ -1055,7 +1199,7 @@ int default_handler(unsigned int pc, unsigned short inst)
 				rb += (inst & ((1 << 11)-1)) << 1; ;
 				rb += 2;
 
-				if (DISS) fprintf(stderr, "bl 0x%08X\n", rb-3);
+				if (DISS) fprintf(stderr, "bl 0x%08x\n", rb-3);
 				write_register(14, (pc-2) | 1);
 				write_register(15, rb);
 				return (0);
@@ -1063,7 +1207,7 @@ int default_handler(unsigned int pc, unsigned short inst)
 			else
 				if ((inst & 0x1800) == 0x0800) //H = b01
 				{
-					//fprintf(stderr, "cannot branch to arm 0x%08X 0x%04X\n", pc, inst);
+					//fprintf(stderr, "cannot branch to arm 0x%08x 0x%04x\n", pc, inst);
 					//return (1);
 					//branch to thumb
 					rb = read_register(14);
@@ -1073,7 +1217,7 @@ int default_handler(unsigned int pc, unsigned short inst)
 
 					printf("hello\n");
 
-					if (DISS) fprintf(stderr, "bl 0x%08X\n", rb-3);
+					if (DISS) fprintf(stderr, "bl 0x%08x\n", rb-3);
 					write_register(14, (pc-2) | 1);
 					write_register(15, rb);
 					return (0);
@@ -1089,7 +1233,7 @@ int default_handler(unsigned int pc, unsigned short inst)
 		rm = (inst >> 3) & 0xF;
 		if (DISS) fprintf(stderr, "blx r%u\n", rm);
 		rc = read_register(rm);
-		//fprintf(stderr, "blx r%u 0x%X 0x%X\n", rm, rc, pc);
+		//fprintf(stderr, "blx r%u 0x%x 0x%x\n", rm, rc, pc);
 		rc += 2;
 		if (rc & 1)
 		{
@@ -1100,7 +1244,7 @@ int default_handler(unsigned int pc, unsigned short inst)
 		}
 		else
 		{
-			fprintf(stderr, "cannot branch to arm 0x%08X 0x%04X\n", pc, inst);
+			fprintf(stderr, "cannot branch to arm 0x%08x 0x%04x\n", pc, inst);
 			return (1);
 		}
 	}
@@ -1129,7 +1273,7 @@ int default_handler(unsigned int pc, unsigned short inst)
 		if (DISS) fprintf(stderr, "cmp r%u, #0x%02X\n", rn, rb);
 		ra = read_register(rn);
 		rc = ra-rb;
-		//fprintf(stderr, "0x%08X 0x%08X\n", ra, rb);
+		//fprintf(stderr, "0x%08x 0x%08x\n", ra, rb);
 		do_nflag(rc);
 		do_zflag(rc);
 		do_cflag(ra, ~rb, 1);
@@ -1146,7 +1290,7 @@ int default_handler(unsigned int pc, unsigned short inst)
 		ra = read_register(rn);
 		rb = read_register(rm);
 		rc = ra-rb;
-		//fprintf(stderr, "0x%08X 0x%08X\n", ra, rb);
+		//fprintf(stderr, "0x%08x 0x%08x\n", ra, rb);
 		do_nflag(rc);
 		do_zflag(rc);
 		do_cflag(ra, ~rb, 1);
@@ -1269,11 +1413,11 @@ int default_handler(unsigned int pc, unsigned short inst)
 		rb = (inst >> 0) & 0xFF;
 		rd = (inst >> 8) & 0x07;
 		rb <<= 2;
-		if (DISS) fprintf(stderr, "ldr r%u, [PC+#0x%X] ", rd, rb);
+		if (DISS) fprintf(stderr, "ldr r%u, [PC+#0x%x] ", rd, rb);
 		ra = read_register(15);
 		ra &= ~3;
 		rb += ra;
-		if (DISS) fprintf(stderr, "; @ 0x%X\n", rb);
+		if (DISS) fprintf(stderr, "; @ 0x%x\n", rb);
 		rc = read32(rb);
 		write_register(rd, rc);
 		return (0);
@@ -1285,7 +1429,7 @@ int default_handler(unsigned int pc, unsigned short inst)
 		rb = (inst >> 0) & 0xFF;
 		rd = (inst >> 8) & 0x07;
 		rb <<= 2;
-		if (DISS) fprintf(stderr, "ldr r%u, [SP+#0x%X]\n", rd, rb);
+		if (DISS) fprintf(stderr, "ldr r%u, [SP+#0x%x]\n", rd, rb);
 		ra = read_register(13);
 		//ra &= ~3;
 		rb += ra;
@@ -1300,7 +1444,7 @@ int default_handler(unsigned int pc, unsigned short inst)
 		rd = (inst >> 0) & 0x07;
 		rn = (inst >> 3) & 0x07;
 		rb = (inst >> 6) & 0x1F;
-		if (DISS) fprintf(stderr, "ldrb r%u, [r%u, #0x%X]\n", rd, rn, rb);
+		if (DISS) fprintf(stderr, "ldrb r%u, [r%u, #0x%x]\n", rd, rn, rb);
 		rb = read_register(rn)+rb;
 		rc = read16(rb & (~1));
 		if (rb & 1)
@@ -1341,7 +1485,7 @@ int default_handler(unsigned int pc, unsigned short inst)
 		rn = (inst >> 3) & 0x07;
 		rb = (inst >> 6) & 0x1F;
 		rb <<= 1;
-		if (DISS) fprintf(stderr, "ldrh r%u, [r%u, #0x%X]\n", rd, rn, rb);
+		if (DISS) fprintf(stderr, "ldrh r%u, [r%u, #0x%x]\n", rd, rn, rb);
 		rb = read_register(rn)+rb;
 		rc = read16(rb);
 		write_register(rd, rc & 0xFFFF);
@@ -1404,7 +1548,7 @@ int default_handler(unsigned int pc, unsigned short inst)
 		rd = (inst >> 0) & 0x07;
 		rm = (inst >> 3) & 0x07;
 		rb = (inst >> 6) & 0x1F;
-		if (DISS) fprintf(stderr, "lsls r%u, r%u, #0x%X\n", rd, rm, rb);
+		if (DISS) fprintf(stderr, "lsls r%u, r%u, #0x%x\n", rd, rm, rb);
 		rc = read_register(rm);
 		if (rb == 0)
 		{
@@ -1463,7 +1607,7 @@ int default_handler(unsigned int pc, unsigned short inst)
 		rd = (inst >> 0) & 0x07;
 		rm = (inst >> 3) & 0x07;
 		rb = (inst >> 6) & 0x1F;
-		if (DISS) fprintf(stderr, "lsrs r%u, r%u, #0x%X\n", rd, rm, rb);
+		if (DISS) fprintf(stderr, "lsrs r%u, r%u, #0x%x\n", rd, rm, rb);
 		rc = read_register(rm);
 		if (rb == 0)
 		{
@@ -1533,7 +1677,7 @@ int default_handler(unsigned int pc, unsigned short inst)
 		rn = (inst >> 3) & 7;
 		if (DISS) fprintf(stderr, "movs r%u, r%u\n", rd, rn);
 		rc = read_register(rn);
-		//fprintf(stderr, "0x%08X\n", rc);
+		//fprintf(stderr, "0x%08x\n", rc);
 		write_register(rd, rc);
 		do_nflag(rc);
 		do_zflag(rc);
@@ -1552,14 +1696,14 @@ int default_handler(unsigned int pc, unsigned short inst)
 		rc = read_register(rm);
 		if ((rd == 14) && (rm == 15))
 		{
-			//printf("mov lr, pc warning 0x%08X\n", pc-2);
+			//printf("mov lr, pc warning 0x%08x\n", pc-2);
 			//rc |= 1;
 		}
 		if (rd == 15)
 		{
 			//if ((rc & 1) == 0)
 			//{
-			//fprintf(stderr, "cpy or mov pc, ... produced an ARM address 0x%08X 0x%08X\n", pc, rc);
+			//fprintf(stderr, "cpy or mov pc, ... produced an ARM address 0x%08x 0x%08x\n", pc, rc);
 			//exit(1);
 			//}
 			rc &= ~1;  //write_register may do this as well
@@ -1779,7 +1923,7 @@ int default_handler(unsigned int pc, unsigned short inst)
 		rn = (inst >> 3) & 0x07;
 		rb = (inst >> 6) & 0x1F;
 		rb <<= 2;
-		if (DISS) fprintf(stderr, "str r%u, [r%u, #0x%X]\n", rd, rn, rb);
+		if (DISS) fprintf(stderr, "str r%u, [r%u, #0x%x]\n", rd, rn, rb);
 		rb = read_register(rn)+rb;
 		rc = read_register(rd);
 		write32(rb, rc);
@@ -1805,9 +1949,9 @@ int default_handler(unsigned int pc, unsigned short inst)
 		rb = (inst >> 0) & 0xFF;
 		rd = (inst >> 8) & 0x07;
 		rb <<= 2;
-		if (DISS) fprintf(stderr, "str r%u, [SP, #0x%X]\n", rd, rb);
+		if (DISS) fprintf(stderr, "str r%u, [SP, #0x%x]\n", rd, rb);
 		rb = read_register(13)+rb;
-		//fprintf(stderr, "0x%08X\n", rb);
+		//fprintf(stderr, "0x%08x\n", rb);
 		rc = read_register(rd);
 		write32(rb, rc);
 		return (0);
@@ -1819,7 +1963,7 @@ int default_handler(unsigned int pc, unsigned short inst)
 		rd = (inst >> 0) & 0x07;
 		rn = (inst >> 3) & 0x07;
 		rb = (inst >> 6) & 0x1F;
-		if (DISS) fprintf(stderr, "strb r%u, [r%u, #0x%X]\n", rd, rn, rb);
+		if (DISS) fprintf(stderr, "strb r%u, [r%u, #0x%x]\n", rd, rn, rb);
 		rb = read_register(rn)+rb;
 		rc = read_register(rd);
 		ra = read16(rb & (~1));
@@ -1868,7 +2012,7 @@ int default_handler(unsigned int pc, unsigned short inst)
 		rn = (inst >> 3) & 0x07;
 		rb = (inst >> 6) & 0x1F;
 		rb <<= 1;
-		if (DISS) fprintf(stderr, "strh r%u, [r%u, #0x%X]\n", rd, rn, rb);
+		if (DISS) fprintf(stderr, "strh r%u, [r%u, #0x%x]\n", rd, rn, rb);
 		rb = read_register(rn)+rb;
 		rc = read_register(rd);
 		write16(rb, rc & 0xFFFF);
@@ -1894,7 +2038,7 @@ int default_handler(unsigned int pc, unsigned short inst)
 		rd = (inst >> 0) & 7;
 		rn = (inst >> 3) & 7;
 		rb = (inst >> 6) & 7;
-		if (DISS) fprintf(stderr, "subs r%u, r%u, #0x%X\n", rd, rn, rb);
+		if (DISS) fprintf(stderr, "subs r%u, r%u, #0x%x\n", rd, rn, rb);
 		ra = read_register(rn);
 		rc = ra-rb;
 		write_register(rd, rc);
@@ -2033,8 +2177,28 @@ int default_handler(unsigned int pc, unsigned short inst)
 		return (0);
 	}
 
-	fprintf(stderr, "invalid instruction 0x%08X 0x%04X\n", pc-4, inst);
+	//UDIV
+	if ((inst & 0xFFF0) == 0xFBB0)
+	{
+		rn = (inst >> 0) & 0x7;
+		inst = fetch16(pc);
+		pc += 2;
+		write_register(15, pc);
+		rd = (inst >> 8) & 0x7;
+		rm = (inst >> 0) & 0x7;
+		if (DISS) fprintf(stderr, "udiv r%u, r%u, r%u\n", rd, rn, rm);
+		write_register(rd, read_register(rn) / read_register(rm));
+		return (0);
+	}
+
+	fprintf(stderr, "invalid instruction 0x%08x 0x%04x\n", pc-4, inst);
 	return (1);
+}
+
+int default_handler(unsigned int pc, unsigned short inst)
+{
+	if ((inst & 0xe000) == 0xe000 && (inst & 0x1800) != 0x0000) return default_thumb2_handler(pc, inst);
+	else return default_thumb_handler(pc, inst);
 }
 
 int execute(void)
@@ -2132,7 +2296,7 @@ int reset(void)
 	reg_norm[15] = fetch32(0x00000004);  //cortex-m
 	if ((reg_norm[15] & 1) == 0)
 	{
-		fprintf(stderr, "reset vector with an ARM address 0x%08X\n", reg_norm[15]);
+		fprintf(stderr, "reset vector with an ARM address 0x%08x\n", reg_norm[15]);
 		exit(1);
 	}
 	reg_norm[15] &= ~1;
