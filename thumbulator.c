@@ -724,10 +724,48 @@ int default_thumb2_handler(unsigned int pc, unsigned short inst)
 			}
 			break;
 		case 1:
-		case 3:
 			fprintf(stderr, "Thumb-2 instruction 0x%0x %04x at 0x%08x not implemented\n", inst, inst2, pc - 4);
 			return (1);
-			break;
+		case 3:
+			if ((op2 & 0x38) == 0x38) {
+				op1 = (inst >> 4) & 0x7;
+				op2 = (inst2 >> 4) & 0xf;
+				switch (op1) {
+				case 3:
+					rn = inst & 0xf;
+					rm = inst2 & 0xf;
+					rd = (inst2 >> 8) & 0xf;
+					write_register(rd, read_register(rn) / read_register(rm));
+					write_register(15, pc + 2);
+					return 0;
+				}
+			} else if ((op2 & 0x38) == 0x30) {
+				int ra;
+				op1 = (inst >> 4) & 0x7;
+				op2 = (inst2 >> 4) & 0x3;
+				ra = (inst2 >> 12) & 0xf;
+				switch (op1) {
+				case 0:
+					rn = inst & 0xf;
+					rm = inst2 & 0xf;
+					rd = (inst2 >> 8) & 0xf;
+					ra = (inst2 >> 12) & 0xf;
+					if (op2 == 0) {
+						if (ra == 0xf) {
+						} else {
+						}
+					} else {
+						fprintf(stderr, "%d %d %d = %d\n", read_register(ra), read_register(rm), read_register(rn),
+							read_register(ra) -  read_register(rm) * read_register(rn));
+						write_register(rd, read_register(ra) - read_register(rm) * read_register(rn));
+						dump_registers();
+						write_register(15, pc + 2);
+						return (0);
+					}
+				}
+			}
+			fprintf(stderr, "Thumb-2 instruction 0x%0x %04x at 0x%08x not implemented\n", inst, inst2, pc - 4);
+			return (1);
 	}
 	fprintf(stderr, "invalid Thumb-2 instruction 0x%08x 0x%04x\n", pc-4, inst);
 	return (1);
