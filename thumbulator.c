@@ -29,6 +29,7 @@ unsigned short rom[ROMSIZE >> 1];
 unsigned short ram[RAMSIZE >> 1];
 
 instruction_handler_func instruction_handler[ROMSIZE];
+instruction_handler_func instruction_handler_ram[RAMSIZE];
 
 #define CPSR_N (1 << 31)
 #define CPSR_Z (1 << 30)
@@ -49,10 +50,28 @@ unsigned int reg_norm[16];  //normal execution mode,  do not have a thread mode
 unsigned int cpuid;
 char *output_file_name;
 
-const char options[] = "c:o:d:m:";
+const char options[] = "c:o:d:m:v:";
 const char *condition_str[] = {
 	"eq", "ne", "cs", "cc", "mi", "pl", "vs", "vc", "hi", "ls", "ge", "lt", "gt", "le", "", ""
 };
+
+inline void set_instruction_handler(unsigned int pc, instruction_handler_func handler) {
+	if (pc < RAM_START) {
+		instruction_handler[(pc & ~0x08000000) - 2] = handler;
+	} else {
+		instruction_handler_ram[(pc & ~0x20000000) - 2] = handler;
+	}
+}
+
+inline instruction_handler_func get_instruction_handler(unsigned int pc) {
+	if (pc < RAM_START) {
+		return instruction_handler[(pc & ~0x08000000) - 2];
+	} else {
+		return instruction_handler_ram[(pc & ~0x20000000) - 2];
+	}
+}
+
+
 
 void dump_registers(void) {
 	int i;
@@ -431,21 +450,19 @@ int condition_met(int condition)
 	return 0;
 }
 
-int handle_bkpt(unsigned int bp, unsigned int arg)
+int handle_bkpt(unsigned int bp)
 {
 	int r = 1;
 	FILE *f;
 	int s, e, n;
-	unsigned int sp;
 
-	sp = read_register(13);
-	switch (arg) {
+	switch (read_register(0)) {
 		case 0x18:
 			fprintf(stderr, "Exiting.\n");
 			break;
 		case 0x80:
-			s = read32(sp + 8);
-			e = read32(sp + 4);
+			s = read_register(2);
+			e = read_register(3);
 			fprintf(stderr, "Dumping from %08x to %08x...\n",
 					s, e);
 			f = fopen(output_file_name, "wb");
@@ -455,11 +472,14 @@ int handle_bkpt(unsigned int bp, unsigned int arg)
 				s += 2;
 			}
 			fclose(f);
-			write_register(13, read32(sp + 12));
+			r = 0;
+			break;
+		case 0x81:
+			dump_registers();
 			r = 0;
 			break;
 		default:
-			fprintf(stderr, "bkpt 0x%02X %08x\n", bp, arg);
+			fprintf(stderr, "bkpt 0x%02X %08x\n", bp, read_register(0));
 			break;
 	}
 	return r;
@@ -497,7 +517,7 @@ int bx_handler(unsigned int pc, unsigned short inst)
 	if (DISS) fprintf(stderr, "--- 0x%08x: 0x%04x ", (pc-4), inst);
 
 	rm = (inst >> 3) & 0xF;
-	if (DISS) fprintf(stderr, "bx r%u\n", rm);
+	if (DISS) fprintf(stderr, "--- 0x%08x: bx r%u\n", (pc-4), rm);
 	rc = read_register(rm);
 	rc += 2;
 	// if (DISS) fprintf(stderr, "bx r%u 0x%x 0x%x\n", rm, rc, pc);
@@ -693,19 +713,19 @@ int default_thumb2_handler(unsigned int pc, unsigned short inst)
 						offset = (s << 20) + (!(j1 ^ s) << 19) + (!(j2 ^ s) << 18) + (imm_hi << 12) | (imm_lo << 1);
 						offset = (ext.x = offset) + 1;
 					}
-					if (DISS) fprintf(stderr, "b%s.w %08x\n", condition_str[cond], pc + offset);
+					if (DISS) fprintf(stderr, "--- 0x%08x: b%s.w %08x\n", (pc - 4), condition_str[cond], pc + offset);
 				} else if ((op & 0x5) == 1) {
 					struct {signed int x:24;} ext;
 					imm_hi = (inst & 0x3FF);
 					imm_lo = (inst2 & 0x7FF);
 					offset = (s << 24) + (!(j1 ^ s) << 23) + (!(j2 ^ s) << 22) + (imm_hi << 12) | (imm_lo << 1);
 					offset = (ext.x = offset) + 1;
-					if (DISS) fprintf(stderr, "bl %08x\n", pc + offset);
+					write_register(14, pc | 1);
+					if (DISS) fprintf(stderr, "--- 0x%08x: bl %08x\n", (pc - 4), pc + offset);
 				}
 
 				if (offset) {
 					if ((pc + 2 + offset) & 1) {
-						write_register(14, pc | 1);
 						rc &= ~1;
 						write_register(15, pc + 2 + offset);
 						return (0);
@@ -719,6 +739,27 @@ int default_thumb2_handler(unsigned int pc, unsigned short inst)
 					return 0;
 				}
 			} else {
+				if (op == 1) {
+				} else {
+					if ((op2 & 0b010000) == 0b010000) {
+					} else {
+						int op, rd, imm8, imm3, i;
+						op = (inst >> 4) & 0x1e;
+						rd = (inst2 >> 8) & 0xf;
+						rn = inst & 0xf;
+						imm3 = (inst2 >> 12) & 0x7; imm8 = (inst2 & 0xff); i = (inst >> 4) & 0x1;
+						fprintf(stderr, "Thumb-2: %02x %1x %1x\n", op, rd, rn);
+						switch (op) {
+						case 4: if (rn != 15) {
+								if (!i) {
+									write_register(rd, read_register(rn) | (imm3 << 8) | imm8 );
+								}
+							} else {
+							}
+							break;
+						}
+					}
+				}
 				fprintf(stderr, "Thumb-2 instruction 0x%0x %04x at 0x%08x not implemented\n", inst, inst2, pc - 4);
 				return (1);
 			}
@@ -755,12 +796,56 @@ int default_thumb2_handler(unsigned int pc, unsigned short inst)
 						} else {
 						}
 					} else {
-						fprintf(stderr, "%d %d %d = %d\n", read_register(ra), read_register(rm), read_register(rn),
-							read_register(ra) -  read_register(rm) * read_register(rn));
 						write_register(rd, read_register(ra) - read_register(rm) * read_register(rn));
-						dump_registers();
 						write_register(15, pc + 2);
 						return (0);
+					}
+				}
+			} else if ((op2 & 0x67) == 0x05) {
+				op1 = (inst >> 7) & 0x3;
+				op2 = (inst2 >> 6) & 0x3f;
+				rn = (inst & 0xf);
+				//fprintf(stderr, "Thumb-2: %01x %07x %01x\n", op1, op2, rn);
+				if (rn == 0xf) {
+					int rt, imm12, u;
+					rt = (inst2 >> 12) & 0xf;
+					imm12 = inst2 & 0x7ff;
+					u = (inst >> 6) & 0x1;
+					imm12 = inst2 & 0x7ff;
+					write_register(rt, read32(read_register(15) + (u ? imm12 : -imm12)));
+					write_register(15, pc + 2);
+					return (0);
+				} else {
+					if (op1 == 0x00 && op2 == 0x00) {
+					} else if (op1 == 0x00 && (((op2 & 0x24) == 0x24) || ((op2 & 0b111100) == 0b110000))) {
+					} else if (op1 == 0x01) {
+						int rt, imm12;
+						rt = (inst2 >> 12) & 0xf;
+						imm12 = inst2 & 0x7ff;
+						write_register(rt, read32(read_register(rn) + imm12));
+						write_register(15, read_register(15) + 2);
+						return (0);
+					}
+				}
+			} else if ((op2 & 0b1110001) == 0b0000000) {
+				op1 = (inst >> 5) & 0x7;
+				op2 = (inst2 >> 6) & 0x3f;
+				rn = inst & 0xf;
+				//fprintf(stderr, "Thumb-2: %01x %07x %1x\n", op1, op2, rn);
+				if (op1 == 0x3) {
+				} else if (op1 == 0x2) {
+					if ((op2 & 0b100000) == 0b100000) {
+						int rt, imm8, p, u, w;
+						rt = (inst2 >> 12) & 0xf;
+						imm8 = inst2 & 0xff;
+						p = (inst2 >> 10) & 0x1;
+						u = (inst2 >> 9) & 0x1;
+						w = (inst2 >> 8) & 0x1;
+						write32(read_register(rn) + (p ? (u ? imm8 : -imm8) : 0), read_register(rt));
+						if (w) write_register(rn, read_register(rn) + (u ? imm8 : -imm8));
+						write_register(15, pc + 2);
+						return (0);
+					} else {
 					}
 				}
 			}
@@ -781,32 +866,32 @@ int default_thumb_handler(unsigned int pc, unsigned short inst)
 
 	//LDR(1) two register immediate
 	if ((inst & 0xF800) == 0x6800) {
-		instruction_handler[(pc & ~0x08000000) - 2] = ldr1_handler;
+		set_instruction_handler(pc, ldr1_handler);
 		return ldr1_handler(pc, inst);
 	}
 
 	//BX
 	if ((inst & 0xFF87) == 0x4700) {
-		instruction_handler[(pc & ~0x08000000) - 2] = bx_handler;
+		set_instruction_handler(pc, bx_handler);
 		return bx_handler(pc, inst);
 	}
 
 	//ADD(2) big immediate one register
 	if ((inst & 0xF800) == 0x3000) {
-		instruction_handler[(pc & ~0x08000000) - 2] = add2_handler;
+		set_instruction_handler(pc, add2_handler);
 		return add2_handler(pc, inst);
 	}
 
 	//POP
 	if ((inst & 0xFE00) == 0xBC00) {
-		instruction_handler[(pc & ~0x08000000) - 2] = pop_handler;
+		set_instruction_handler(pc, pop_handler);
 		return pop_handler(pc, inst);
 	}
 
 	//PUSH
 	if ((inst & 0xFE00) == 0xB400)
 	{
-		instruction_handler[(pc & ~0x08000000) - 2] = push_handler;
+		set_instruction_handler(pc, push_handler);
 		return push_handler(pc, inst);
 	}
 
@@ -1213,7 +1298,7 @@ int default_thumb_handler(unsigned int pc, unsigned short inst)
 	if ((inst & 0xFF00) == 0xBE00)
 	{
 		rb = (inst >> 0) & 0xFF;
-		return (handle_bkpt(rb, read32(read_register(13))));
+		return (handle_bkpt(rb));
 	}
 
 	//BL/BLX(1)
@@ -2315,7 +2400,7 @@ int execute(void)
 	pc += 2;
 	write_register(15, pc);
 
-	return instruction_handler[(pc & ~0x08000000) - 2](pc, inst);
+	return get_instruction_handler(pc)(pc, inst);
 }
 
 int reset(void)
@@ -2409,6 +2494,7 @@ int main(int argc, char *argv[])
 	memset(rom, 0x00, sizeof(rom));
 	memset(ram, 0x00, sizeof(ram));
 	for (i = 0; i < ROMSIZE; i++) instruction_handler[i] = default_handler;
+	for (i = 0; i < RAMSIZE; i++) instruction_handler_ram[i] = default_handler;
 	handle_cmd_line(argc, argv);
 	run();
 	return (0);
