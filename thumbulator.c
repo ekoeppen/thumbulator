@@ -2454,7 +2454,7 @@ int execute(void)
 
 int reset(void)
 {
-	memset(ram, 0xFF, sizeof(ram));
+	memset(ram, 0x00, sizeof(ram));
 
 	systick_ctrl = 0x00000004;
 	systick_reload = 0x00000000;
@@ -2540,7 +2540,7 @@ int main(int argc, char *argv[])
 	int i;
 
 	cpuid = 0;
-	memset(rom, 0x00, sizeof(rom));
+	memset(rom, 0xff, sizeof(rom));
 	memset(ram, 0x00, sizeof(ram));
 	for (i = 0; i < ROMSIZE; i++) instruction_handler[i] = default_handler;
 	for (i = 0; i < RAMSIZE; i++) instruction_handler_ram[i] = default_handler;
