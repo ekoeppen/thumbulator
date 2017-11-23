@@ -476,21 +476,23 @@ int condition_met(int condition)
 	return 0;
 }
 
-int handle_bkpt(unsigned int bp)
+int handle_bkpt(unsigned int bp, unsigned int arg)
 {
 	int r = 1;
 	FILE *f;
 	int s, e, n;
+	unsigned int sp;
 
-	switch (read_register(0)) {
+	sp = read_register(13);
+	switch (arg) {
 		case 0x18:
 			fprintf(stderr, "Exiting.\n");
 			break;
 		case 0x80:
-			s = read_register(2);
-			e = read_register(3);
-			fprintf(stderr, "Dumping from %08x to %08x...\n",
-					s, e);
+			s = read32(sp + 8);
+			e = read32(sp + 4);
+			fprintf(stderr, "Dumping from %08x to %08x into %s...\n",
+					s, e, output_file_name);
 			f = fopen(output_file_name, "wb");
 			while (s != e) {
 				n = read32(s);
@@ -498,6 +500,7 @@ int handle_bkpt(unsigned int bp)
 				s += 2;
 			}
 			fclose(f);
+			write_register(13, read_register(13) + 8);
 			r = 0;
 			break;
 		case 0x81:
@@ -505,9 +508,10 @@ int handle_bkpt(unsigned int bp)
 			r = 0;
 			break;
 		default:
-			fprintf(stderr, "bkpt 0x%02X %08x\n", bp, read_register(0));
+			fprintf(stderr, "bkpt 0x%02X %08x\n", bp, arg);
 			break;
 	}
+	write_register(13, read_register(13) + 4);
 	return r;
 }
 
@@ -1343,7 +1347,7 @@ int default_thumb_handler(unsigned int pc, unsigned short inst)
 	if ((inst & 0xFF00) == 0xBE00)
 	{
 		rb = (inst >> 0) & 0xFF;
-		return (handle_bkpt(rb));
+		return (handle_bkpt(rb, read32(read_register(13))));
 	}
 
 	//BL/BLX(1)
