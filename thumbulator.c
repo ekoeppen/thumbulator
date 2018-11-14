@@ -3,6 +3,11 @@
 #include <string.h>
 #include <getopt.h>
 #include <ctype.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+
 
 typedef int (*instruction_handler_func)(unsigned int addr, unsigned short instruction);
 
@@ -2489,14 +2494,20 @@ int run(void)
 
 unsigned int load_binary(unsigned int addr, char *name)
 {
-	FILE *f;
-	unsigned int r;
+	int f;
+	int r;
+	struct stat st;
 
-	f = fopen(name, "rb");
-	r = fread(&rom[addr >> 1], 1, sizeof(rom), f);
-	fclose(f);
-	fprintf(stderr, "Stored file %s (%d bytes) at address 0x%08x\n", name, r, addr);
-	return r;
+	f = open(name, O_RDONLY);
+	if (f < 0) {
+		perror("Can't open file:");
+		exit(1);
+	}
+	fstat(f, &st);
+	memset(&rom[addr >> 1], 0x0a0a, st.st_size + 1);
+	r = read(f, &rom[addr >> 1], st.st_size);
+	close(f);
+	return (r + 1) & ~0x1;
 }
 
 unsigned int htoi(char *h)
