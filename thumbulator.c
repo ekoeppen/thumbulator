@@ -5,9 +5,11 @@
 #include <ctype.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
 #include <fcntl.h>
 #include <unistd.h>
-
+#include <errno.h>
 
 typedef int (*instruction_handler_func)(unsigned int addr, unsigned short instruction);
 
@@ -29,6 +31,8 @@ unsigned int read_register(unsigned int);
 
 #define ROMSIZE (ROMADDMASK+1)
 #define RAMSIZE (RAMADDMASK+1)
+
+#define MAX_INPUT (64 * 1024)
 
 unsigned short rom[ROMSIZE >> 1];
 unsigned short ram[RAMSIZE >> 1];
@@ -55,7 +59,14 @@ unsigned int reg_norm[16];  //normal execution mode,  do not have a thread mode
 unsigned int cpuid;
 char *output_file_name;
 
-const char options[] = "c:o:d:m:v:";
+int read_fd;
+int write_fd;
+unsigned char input_buffer[MAX_INPUT];
+size_t input_read_ptr = 0;
+size_t input_write_ptr = 0;
+int socket_fd = -1;
+
+const char options[] = "c:o:d:m:v:p:";
 const char *condition_str[] = {
 	"eq", "ne", "cs", "cc", "mi", "pl", "vs", "vc", "hi", "ls", "ge", "lt", "gt", "le", "", ""
 };
@@ -203,7 +214,7 @@ void write32(unsigned int addr,  unsigned int data)
 			{
 				case PERIPH_START:
 					if (DISS) printf("uart: [");
-					printf("%c", data & 0xFF);
+					write(write_fd, &data, 1);
 					if (DISS) printf("]\n");
 					fflush(stdout);
 					break;
@@ -321,9 +332,23 @@ unsigned int read32(unsigned int addr)
 				switch(addr)
 				{
 					case PERIPH_START:
-						if (DISS) printf("uart: [");
-						data = getchar();
+						if (DISS) printf("uart: [%d %d", input_read_ptr, input_write_ptr);
+						if (input_read_ptr != input_write_ptr) {
+							data = input_buffer[input_read_ptr++];
+							if (input_read_ptr == MAX_INPUT) input_read_ptr = 0;
+						}
 						if (DISS) printf("%c]\n", data);
+						return (data);
+					case PERIPH_START + 4:
+						if (input_read_ptr != input_write_ptr) {
+							data = -1;
+						} else {
+							data = 0;
+						}
+					case PERIPH_START + 8:
+						{
+							read(read_fd, &data, 1);
+						}
 						return (data);
 					case 0xE000E010:
 						{
@@ -481,6 +506,17 @@ int condition_met(int condition)
 	return 0;
 }
 
+void wait_for_input(void)
+{
+	fd_set s_rd;
+
+	if (input_read_ptr == input_write_ptr) {
+		FD_ZERO(&s_rd);
+		FD_SET(read_fd, &s_rd);
+		select(read_fd + 1, &s_rd, NULL, NULL, NULL);
+	}
+}
+
 int handle_bkpt(unsigned int bp, unsigned int arg)
 {
 	int r = 1;
@@ -510,6 +546,10 @@ int handle_bkpt(unsigned int bp, unsigned int arg)
 			break;
 		case 0x81:
 			dump_registers();
+			r = 0;
+			break;
+		case 0x82:
+			wait_for_input();
 			r = 0;
 			break;
 		default:
@@ -2389,6 +2429,7 @@ int execute(void)
 	unsigned int op;
 
 	pc = read_register(15);
+	//fprintf(stderr, "%08x [%08x %08x %08x]\n", pc - 2, reg_norm[0], reg_norm[5], reg_norm[6]);
 
 	if (handler_mode)
 	{
@@ -2484,9 +2525,14 @@ int reset(void)
 
 int run(void)
 {
+	char c;
 	reset();
 	while (1)
 	{
+		while (read(read_fd, &c, 1) == 1) {
+			input_buffer[input_write_ptr++] = c;
+			if (input_write_ptr > MAX_INPUT) input_write_ptr = 0;
+		}
 		if (execute()) break;
 	}
 	return (0);
@@ -2523,6 +2569,39 @@ unsigned int htoi(char *h)
 	return r;
 }
 
+int start_server(int port)
+{
+	struct sockaddr_in server, client;
+	socklen_t c;
+	int t = 1;
+
+	socket_fd = socket(AF_INET, SOCK_STREAM, 0);
+	server.sin_family = AF_INET;
+	server.sin_addr.s_addr = INADDR_ANY;
+	server.sin_port = htons(port);
+	if (bind(socket_fd, (struct sockaddr *) &server, sizeof(server)) < 0) {
+		perror("Failed to bind");
+		exit(1);
+	}
+	if (listen(socket_fd, 1) < 0) {
+		perror("Failed to listen");
+		exit(1);
+	}
+	setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &t,sizeof(int));
+	c = sizeof(struct sockaddr_in);
+	fprintf(stderr, "Waiting for connection\n");
+	read_fd = accept(socket_fd, (struct sockaddr *) &client, (socklen_t *) &c);
+	write_fd = read_fd;
+	fprintf(stderr, "Connected\n");
+}
+
+void stop_server(void)
+{
+	shutdown(read_fd, SHUT_RDWR);
+	close(read_fd);
+	close(socket_fd);
+}
+
 void handle_cmd_line(int argc, char *argv[])
 {
 	int c;
@@ -2542,20 +2621,30 @@ void handle_cmd_line(int argc, char *argv[])
 		case 'o':
 			output_file_name = optarg;
 			break;
+		case 'p':
+			start_server(atoi(optarg));
+			break;
 		}
 	}
 }
 
 int main(int argc, char *argv[])
 {
-	int i;
+	int i, flags;
 
 	cpuid = 0;
+	read_fd = STDIN_FILENO;
+	write_fd = STDOUT_FILENO;
 	memset(rom, 0xff, sizeof(rom));
 	memset(ram, 0x00, sizeof(ram));
 	for (i = 0; i < ROMSIZE; i++) instruction_handler[i] = default_handler;
 	for (i = 0; i < RAMSIZE; i++) instruction_handler_ram[i] = default_handler;
 	handle_cmd_line(argc, argv);
+	flags = fcntl(read_fd, F_GETFL, 0);
+	fcntl(read_fd, F_SETFL, flags | O_NONBLOCK);
 	run();
+	if (socket_fd != -1) {
+		stop_server();
+	}
 	return (0);
 }
