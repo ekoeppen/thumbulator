@@ -190,6 +190,17 @@ void write16(unsigned int addr,  unsigned int data)
 			addr >>= 1;
 			rom[addr] = data & 0xFFFF;
 			return;
+		case PERIPH_START: //periph
+			switch(addr)
+			{
+				case PERIPH_START:
+					if (DISS) printf("uart: [");
+					write(write_fd, &data, 1);
+					if (DISS) printf("]\n");
+					fflush(stdout);
+					break;
+			}
+			return;
 		case RAM_START: //RAM
 			if (DBUGRAM) fprintf(stderr, "write16(0x%08x, 0x%04x)\n", addr, data);
 			addr &= RAMADDMASK;
@@ -293,6 +304,32 @@ unsigned int read16(unsigned int addr)
 			data = rom[addr];
 			if (DBUG) fprintf(stderr, "0x%04x\n", data);
 			return (data);
+		case PERIPH_START:
+			{
+				switch(addr)
+				{
+					case PERIPH_START:
+						if (DISS) printf("uart: [%d %d", input_read_ptr, input_write_ptr);
+						if (input_read_ptr != input_write_ptr) {
+							data = input_buffer[input_read_ptr++];
+							if (input_read_ptr == MAX_INPUT) input_read_ptr = 0;
+						}
+						if (DISS) printf("%c]\n", data);
+						return (data);
+					case PERIPH_START + 4:
+						if (input_read_ptr != input_write_ptr) {
+							data = -1;
+						} else {
+							data = 0;
+						}
+					case PERIPH_START + 8:
+						{
+							read(read_fd, &data, 1);
+						}
+						return (data);
+				}
+				break;
+			}
 		case RAM_START: //RAM
 			if (DBUGRAM) fprintf(stderr, "read16(0x%08x) = ", addr);
 			addr &= RAMADDMASK;
