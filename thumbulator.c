@@ -46,6 +46,8 @@ instruction_handler_func instruction_handler_ram[RAMSIZE];
 #define CPSR_V (1 << 28)
 #define CPSR_Q (1 << 27)
 
+unsigned int entry = 0;
+
 unsigned int systick_ctrl;
 unsigned int systick_reload;
 unsigned int systick_count;
@@ -66,7 +68,7 @@ size_t input_read_ptr = 0;
 size_t input_write_ptr = 0;
 int socket_fd = -1;
 
-const char options[] = "c:o:d:m:v:p:";
+const char options[] = "c:o:d:m:v:p:e:";
 const char *condition_str[] = {
 	"eq", "ne", "cs", "cc", "mi", "pl", "vs", "vc", "hi", "ls", "ge", "lt", "gt", "le", "", ""
 };
@@ -2509,9 +2511,9 @@ int reset(void)
 	handler_mode = 0;
 	cpsr = 0;
 
-	reg_norm[13] = fetch32(0x00000000);  //cortex-m
+	reg_norm[13] = fetch32(entry);  //cortex-m
 	reg_norm[14] = 0xFFFFFFFF;
-	reg_norm[15] = fetch32(0x00000004);  //cortex-m
+	reg_norm[15] = fetch32(entry + 4);  //cortex-m
 	if ((reg_norm[15] & 1) == 0)
 	{
 		fprintf(stderr, "reset vector with an ARM address 0x%08x\n", reg_norm[15]);
@@ -2614,6 +2616,9 @@ void handle_cmd_line(int argc, char *argv[])
 			break;
 		case 'm':
 			org = htoi(optarg);
+			break;
+		case 'e':
+			entry = htoi(optarg);
 			break;
 		case 'd':
 			org += load_binary(org, optarg);
