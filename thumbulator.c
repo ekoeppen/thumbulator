@@ -138,9 +138,8 @@ unsigned int fetch16(unsigned int addr)
 			if (DBUG) fprintf(stderr, "0x%04x\n", data);
 			return (data);
 	}
-	fprintf(stderr, "fetch16(0x%08x),  abort pc  =  0x%04x\n", addr, read_register(15));
-	dump_registers();
-	exit(1);
+	if (DBUG) fprintf(stderr, "fetch16(0x%08x),  abort pc  =  0x%04x\n", addr, read_register(15));
+	return 0;
 }
 
 unsigned int fetch32(unsigned int addr)
@@ -174,9 +173,8 @@ unsigned int fetch32(unsigned int addr)
 			if (DBUG) fprintf(stderr, "0x%08x\n", data);
 			return (data);
 	}
-	fprintf(stderr, "fetch32(0x%08x),  abort pc 0x%04x\n", addr, read_register(15));
-	dump_registers();
-	exit(1);
+	if (DBUG) fprintf(stderr, "fetch32(0x%08x),  abort pc 0x%04x\n", addr, read_register(15));
+	return 0;
 }
 
 void write16(unsigned int addr,  unsigned int data)
@@ -199,9 +197,7 @@ void write16(unsigned int addr,  unsigned int data)
 			ram[addr] = data & 0xFFFF;
 			return;
 	}
-	fprintf(stderr, "write16(0x%08x, 0x%04x),  abort pc 0x%04x\n", addr, data, read_register(15));
-	dump_registers();
-	exit(1);
+	if (DBUG) fprintf(stderr, "write16(0x%08x, 0x%04x),  abort pc 0x%04x\n", addr, data, read_register(15));
 }
 
 void write32(unsigned int addr,  unsigned int data)
@@ -279,8 +275,7 @@ void write32(unsigned int addr,  unsigned int data)
 			write16(addr+2, (data >> 16) & 0xFFFF);
 			return;
 	}
-	fprintf(stderr, "write32(0x%08x, 0x%08x),  ignored pc 0x%04x\n", addr, data, read_register(15));
-	exit(1);
+	if (DBUG) fprintf(stderr, "write32(0x%08x, 0x%08x),  ignored pc 0x%04x\n", addr, data, read_register(15));
 }
 
 unsigned int read16(unsigned int addr)
@@ -307,9 +302,8 @@ unsigned int read16(unsigned int addr)
 			if (DBUGRAM) fprintf(stderr, "0x%04x\n", data);
 			return (data);
 	}
-	fprintf(stderr, "read16(0x%08x),  abort pc 0x%04x\n", addr, read_register(15));
-	dump_registers();
-	exit(1);
+	if (DBUG) fprintf(stderr, "read16(0x%08x),  abort pc 0x%04x\n", addr, read_register(15));
+	return 0;
 }
 
 unsigned int read32(unsigned int addr)
@@ -381,9 +375,8 @@ unsigned int read32(unsigned int addr)
 				}
 			}
 	}
-	fprintf(stderr, "read32(0x%08x),  abort pc 0x%04x\n", addr, read_register(15));
-	dump_registers();
-	exit(1);
+	if (DBUG) fprintf(stderr, "read32(0x%08x),  abort pc 0x%04x\n", addr, read_register(15));
+	return 0;
 }
 
 unsigned int read_register(unsigned int reg)
