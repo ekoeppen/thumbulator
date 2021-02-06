@@ -886,7 +886,7 @@ int default_thumb2_handler(unsigned int pc, unsigned short inst)
 						rn = inst & 0xf;
 						rm = inst2 & 0xf;
 						rd = (inst2 >> 8) & 0xf;
-						write_register(rd, read_register(rn) / read_register(rm));
+						write_register(rd, (int) read_register(rn) / (int) read_register(rm));
 						write_register(15, pc + 2);
 						return 0;
 					}
