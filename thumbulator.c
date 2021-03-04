@@ -16,18 +16,19 @@ typedef int (*instruction_handler_func)(unsigned int addr, unsigned short instru
 unsigned int read32(unsigned int);
 unsigned int read_register(unsigned int);
 
-#define DBUGFETCH   0
-#define DBUGRAM     0
-#define DBUGRAMW    0
-#define DBUGREG     0
-#define DBUG        0
-#define DISS        0
+int DBUGFETCH    = 0;
+int DBUGRAM      = 0;
+int DBUGRAMW     = 0;
+int DBUGREG      = 0;
+int DBUG         = 0;
+int DBUGUART     = 0;
+int DISS         = 0;
 
 #define RAM_START	0x20000000
 #define PERIPH_START	0xE0000000
 
-#define ROMADDMASK 0xFFFFF
-#define RAMADDMASK 0xFFFFF
+#define ROMADDMASK 0xFFFFFF
+#define RAMADDMASK 0xFFFFFF
 
 #define ROMSIZE (ROMADDMASK+1)
 #define RAMSIZE (RAMADDMASK+1)
@@ -83,8 +84,18 @@ inline void set_instruction_handler(unsigned int pc, instruction_handler_func ha
 
 inline instruction_handler_func get_instruction_handler(unsigned int pc) {
 	if (pc < RAM_START) {
+		unsigned int addr = (pc & ~0x08000000) - 2;
+		if (addr > ROMSIZE) {
+			fprintf(stderr, "ROM access out of bounds: %08x %08x\n", pc, addr);
+			exit(1);
+		}
 		return instruction_handler[(pc & ~0x08000000) - 2];
 	} else {
+		unsigned int addr = (pc & ~0x20000000) - 2;
+		if (addr > RAMSIZE) {
+			fprintf(stderr, "RAM access out of bounds: %08x %08x\n", pc, addr);
+			exit(2);
+		}
 		return instruction_handler_ram[(pc & ~0x20000000) - 2];
 	}
 }
@@ -308,24 +319,28 @@ unsigned int read16(unsigned int addr)
 			{
 				switch(addr)
 				{
-					case PERIPH_START:
-						if (DISS) printf("uart: [%d %d", input_read_ptr, input_write_ptr);
+					case PERIPH_START + 4:
+						if (DBUGUART) printf("uart: [%d %d ", input_read_ptr, input_write_ptr);
 						if (input_read_ptr != input_write_ptr) {
 							data = input_buffer[input_read_ptr++];
 							if (input_read_ptr == MAX_INPUT) input_read_ptr = 0;
 						}
-						if (DISS) printf("%c]\n", data);
+						if (DBUGUART) printf("%c]\n", data);
+						if (DBUG) fprintf(stderr, "%08x\n", data);
 						return (data);
-					case PERIPH_START + 4:
+					case PERIPH_START + 8:
 						if (input_read_ptr != input_write_ptr) {
 							data = -1;
 						} else {
 							data = 0;
 						}
-					case PERIPH_START + 8:
+						if (DBUG) fprintf(stderr, "%08x\n", data);
+						return (data);
+					case PERIPH_START + 12:
 						{
 							read(read_fd, &data, 1);
 						}
+						if (DBUG) fprintf(stderr, "%08x\n", data);
 						return (data);
 				}
 				break;
@@ -364,49 +379,58 @@ unsigned int read32(unsigned int addr)
 			{
 				switch(addr)
 				{
-					case PERIPH_START:
-						if (DISS) printf("uart: [%d %d", input_read_ptr, input_write_ptr);
+					case PERIPH_START + 4:
+						if (DBUGUART) printf("uart: [%d %d ", input_read_ptr, input_write_ptr);
 						if (input_read_ptr != input_write_ptr) {
 							data = input_buffer[input_read_ptr++];
 							if (input_read_ptr == MAX_INPUT) input_read_ptr = 0;
 						}
-						if (DISS) printf("%c]\n", data);
+						if (DBUGUART) printf("%c]\n", data);
+						if (DBUG) fprintf(stderr, "%08x\n", data);
 						return (data);
-					case PERIPH_START + 4:
+					case PERIPH_START + 8:
 						if (input_read_ptr != input_write_ptr) {
 							data = -1;
 						} else {
 							data = 0;
 						}
-					case PERIPH_START + 8:
+						if (DBUG) fprintf(stderr, "%08x\n", data);
+						return (data);
+					case PERIPH_START + 12:
 						{
 							read(read_fd, &data, 1);
 						}
+						if (DBUG) fprintf(stderr, "%08x\n", data);
 						return (data);
 					case 0xE000E010:
 						{
 							data  =  systick_ctrl;
 							systick_ctrl &= (~0x00010000);
+							if (DBUG) fprintf(stderr, "%08x\n", data);
 							return (data);
 						}
 					case 0xE000E014:
 						{
 							data = systick_reload;
+							if (DBUG) fprintf(stderr, "%08x\n", data);
 							return (data);
 						}
 					case 0xE000E018:
 						{
 							data = systick_count;
+							if (DBUG) fprintf(stderr, "%08x\n", data);
 							return (data);
 						}
 					case 0xE000E01C:
 						{
 							data = systick_calibrate;
+							if (DBUG) fprintf(stderr, "%08x\n", data);
 							return (data);
 						}
 					case 0xE000ED00:
 						{
 							data = cpuid;
+							if (DBUG) fprintf(stderr, "%08x\n", data);
 							return (data);
 						}
 				}
@@ -2461,7 +2485,9 @@ int execute(void)
 	unsigned int op;
 
 	pc = read_register(15);
-	//fprintf(stderr, "%08x [%08x %08x %08x]\n", pc - 2, reg_norm[0], reg_norm[5], reg_norm[6]);
+	if (read_register(6) & 0x3) {
+		fprintf(stderr, "%08x [%08x %08x %08x]\n", pc - 2, reg_norm[0], reg_norm[5], reg_norm[6]);
+	}
 
 	if (handler_mode)
 	{
